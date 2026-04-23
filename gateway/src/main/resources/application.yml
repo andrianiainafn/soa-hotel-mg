@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.web: WARN
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          http-client:
+            connect-timeout: 3000
+            response-timeout: 5s
+          default-filters:
+            - AddResponseHeader=X-Content-Type-Options, nosniff
+          routes:
+            - id: service1-route
+              uri: http://service1:3001
+              predicates:
+                - Path=/service1/**
+              filters:
+                - StripPrefix=1
+
+            - id: service2-route
+              uri: http://service2:8081
+              predicates:
+                - Path=/service2/**
+              filters:
+                - StripPrefix=1
+
+            - id: service3-route
+              uri: http://service3:8082
+              predicates:
+                - Path=/service3/**
+              filters:
+                - StripPrefix=1

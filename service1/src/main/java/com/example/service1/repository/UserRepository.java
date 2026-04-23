@@ -1,0 +1,15 @@
+package com.example.service1.repository;
+
+import com.example.service1.entity.User;
+import com.example.service1.enums.Role;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    List<User> findByRole(Role role);
+    boolean existsByEmail(String email);
+    List<User> findByEmailContainingIgnoreCase(String email);
+}

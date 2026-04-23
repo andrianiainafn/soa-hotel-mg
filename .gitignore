@@ -1,0 +1,24 @@
+# Java
+service1/target/
+*.class
+*.jar
+
+# Node.js
+service2/node_modules/
+
+# Python
+service3/__pycache__/
+service3/*.pyc
+service3/.venv/
+service3/venv/
+
+# Go
+service4/service4
+
+# Docker / OS
+.env
+*.log
+.DS_Store
+
+# Dossiers parasites
+my-app/
