@@ -1,31 +1,45 @@
-import json
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from database import init_db
+from routers import stock, menage
 import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/test":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            payload = {"service": "service3"}
-            self.wfile.write(json.dumps(payload).encode("utf-8"))
-            return
-
-        self.send_response(404)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": "not found"}).encode("utf-8"))
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Exécuté au démarrage et à l'arrêt de l'app"""
+    # Démarrage — créer les tables
+    await init_db()
+    print("✅ Base de données initialisée", flush=True)
+    yield
+    # Arrêt — rien à faire pour l'instant
+    print("🛑 Service3 arrêté", flush=True)
 
 
-def main():
-    port = int(os.environ.get("PORT", "8082"))
-    httpd = HTTPServer(("", port), Handler)
-    print(f"service3 listening on {port}", flush=True)
-    httpd.serve_forever()
+app = FastAPI(
+    title="Service3 — Stock & Ménage",
+    description="Gestion du stock des articles par chambre et notifications de ménage",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Enregistrement des routers
+app.include_router(stock.router)
+app.include_router(menage.router)
+
+
+@app.get("/health")
+async def health():
+    return {"service": "service3", "status": "ok", "version": "1.0.0"}
+
+
+@app.get("/test")
+async def test():
+    """Compatibilité avec l'ancien endpoint"""
+    return {"service": "service3", "status": "ok"}
 
 
 if __name__ == "__main__":
-    main()
-
+    import uvicorn
+    port = int(os.environ.get("PORT", 8082))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

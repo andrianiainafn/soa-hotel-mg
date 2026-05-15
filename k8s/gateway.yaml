@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: soa-hotel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+      - name: gateway
+        image: europe-west1-docker.pkg.dev/soa-hotel-project/soa-hotel/gateway:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: soa-hotel
+spec:
+  type: LoadBalancer
+  selector:
+    app: gateway
+  ports:
+  - port: 80
+    targetPort: 8080

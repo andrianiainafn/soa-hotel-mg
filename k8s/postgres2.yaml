@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres2
+  namespace: soa-hotel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres2
+  template:
+    metadata:
+      labels:
+        app: postgres2
+    spec:
+      containers:
+      - name: postgres2
+        image: postgres:16
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "service3db"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: soa-secrets
+              key: db-password
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+          subPath: pgdata 
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: postgres2-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres2-pvc
+  namespace: soa-hotel
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres2
+  namespace: soa-hotel
+spec:
+  selector:
+    app: postgres2
+  ports:
+  - port: 5432

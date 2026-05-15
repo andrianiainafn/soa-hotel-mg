@@ -16,17 +16,24 @@ public class CorsConfig {
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
-        config.setAllowedOrigins(List.of("http://localhost:3000"));
+        config.setAllowCredentials(false);  // ← false obligatoire avec allowedHeaders("*")
+        config.setAllowedOrigins(List.of(
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "http://146.148.30.157",   // ← frontend public
+            "http://34.62.172.250"     // ← gateway publique
+        ));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        config.setAllowedMethods(List.of(
+            "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
+        ));
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
 
-        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(new CorsFilter(source));
-        // Priorité maximale — s'exécute AVANT le gateway routing
+        FilterRegistrationBean<CorsFilter> bean = 
+            new FilterRegistrationBean<>(new CorsFilter(source));
         bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return bean;
     }

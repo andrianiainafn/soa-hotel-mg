@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service1
+  namespace: soa-hotel
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service1
+  template:
+    metadata:
+      labels:
+        app: service1
+    spec:
+      containers:
+        - name: service1
+          image: europe-west1-docker.pkg.dev/soa-hotel-project/soa-hotel/service1:latest
+          ports:
+            - containerPort: 3001
+          env:
+            - name: SPRING_RABBITMQ_HOST
+              value: "rabbitmq"
+            - name: SPRING_RABBITMQ_USERNAME
+              value: "admin"
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soa-secrets
+                  key: rabbitmq-password
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: soa-secrets
+                  key: postgres1-url
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soa-secrets
+                  key: db-password
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service1
+  namespace: soa-hotel
+spec:
+  selector:
+    app: service1
+  ports:
+    - port: 3001

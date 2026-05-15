@@ -56,12 +56,13 @@ public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         .cors(cors -> cors.disable())      // pas de CORS dans service1
         .csrf(csrf -> csrf.disable())
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // ← CRUCIAL
-            .requestMatchers("/users/register", "/users/login", "/users/health", "/users/search").permitAll()
-            .requestMatchers("/users/**").hasRole("ADMIN")
-            .anyRequest().authenticated()
-        )
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            // TODO: réactiver les permissions avant la production
+            // .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            // .requestMatchers("/users/register", "/users/login", "/users/health", "/users/search").permitAll()
+            // .requestMatchers("/users/**").hasRole("ADMIN")
+            // .anyRequest().authenticated()
+            .anyRequest().permitAll()
+        );
 
     return http.build();
 }

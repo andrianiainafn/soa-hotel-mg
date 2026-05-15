@@ -35,6 +35,9 @@ API Gateway (Java Spring Cloud - port 8080)
 ```
 SOA/
 ├── docker-compose.yml
+├── .github/
+│   └── workflows/
+│       └── deploy.yml              # CD — push main → deploy VPS via SSH
 ├── gateway/
 │   ├── Dockerfile
 │   └── src/main/resources/application.yml
@@ -76,9 +79,14 @@ SOA/
 │       ├── reservation.service.js
 │       ├── invoice.service.js
 │       └── payment.service.js
-├── service3/                        # Python — Stock & Ménage
+├── service3/                        # Python FastAPI — Stock & Ménage
 │   ├── Dockerfile
-│   └── main.py
+│   ├── main.py                      # ✅ à réécrire (étape en cours)
+│   ├── models.py                    # ✅ fait — StockItem, RoomStock, CleaningNotification
+│   ├── database.py                  # ✅ fait — connexion PostgreSQL async
+│   ├── schemas.py                   # 🔲 à faire
+│   ├── services/                    # 🔲 à faire
+│   └── routers/                     # 🔲 à faire
 └── service4/                        # Go — Comptabilité & Restaurant (à compléter)
     ├── Dockerfile
     ├── go.mod
@@ -105,6 +113,12 @@ SOA/
 - **Port** : 3001
 - **Base de données** : PostgreSQL (`postgres1:5432/authdb`)
 - **Rôle** : Gestion des utilisateurs et authentification
+
+#### Ce que le service fait automatiquement
+- Gérer la connexion du client et du personnel (réceptionniste, femme de ménage, comptable)
+- Enregistrer la pièce d'identité du client lors du check-in
+- Recevoir la notification que la chambre est propre et la remettre en disponible
+- Bloquer la vente d'une chambre non nettoyée
 
 #### Rôles utilisateurs
 | Rôle | Description |
@@ -166,6 +180,14 @@ SPRING_DATASOURCE_PASSWORD=secret
 - **Base de données** : MongoDB (`mongo1:27017/service1db`)
 - **Rôle** : Gestion des chambres, réservations, factures et paiements
 
+#### Ce que le service fait automatiquement
+- Afficher les chambres disponibles (Standard, Suite Senior, Suite Prestige) avec leurs tarifs
+- Permettre au client de réserver une chambre via le site web
+- Générer automatiquement la facture après réservation
+- Enregistrer le paiement encaissé
+- Notifier service3 qu'une chambre est vendue (pour préparer les articles)
+- Notifier service4 qu'une facture est créée (pour la comptabilité)
+
 #### Endpoints
 | Méthode | URL | Description |
 |---------|-----|-------------|
@@ -213,18 +235,53 @@ PORT=8081
 
 ---
 
-### Service 3 — Python (Stock & Ménage)
+### Service 3 — Python FastAPI (Stock & Ménage)
 - **Port** : 8082
 - **Base de données** : PostgreSQL (`postgres2:5432/service3db`)
 - **Rôle** : Gestion du stock des articles par chambre et notifications ménage
-- **État** : Basique — uniquement `/test` endpoint pour l'instant, à compléter
+- **État** : 🔄 En cours d'implémentation
 
-#### Fonctionnalités à implémenter
+#### Ce que le service fait automatiquement
 - Gérer le stock des articles par chambre (gel douche, pantoufle, brosse à dent, papier hygiénique)
-- Décrémenter le stock à chaque réservation
-- Recevoir notification de la femme de ménage quand chambre nettoyée
-- Notifier la réceptionniste qu'une chambre est propre
-- Alerter quand stock bas
+- Décrémenter le stock automatiquement à chaque réservation
+- Recevoir la notification de la femme de ménage quand une chambre est nettoyée
+- Notifier la réceptionniste qu'une chambre est propre et disponible
+- Alerter quand le stock d'articles est bas
+
+#### Modèles PostgreSQL (tables)
+```
+stock_items          : id, nom, unite, seuil_alerte, created_at
+room_stocks          : id, chambre_id (String = id MongoDB), item_id, quantite, updated_at
+cleaning_notifications: id, chambre_id, chambre_numero, femme_menage_id, statut, message, created_at, traitee_at
+```
+
+> **Note** : service3 ne gère PAS le statut des chambres (disponible/occupée) — c'est service2 qui le fait via MongoDB. service3 reçoit uniquement le `chambre_id` (String, format MongoDB ObjectId) via RabbitMQ.
+
+#### Fichiers créés
+| Fichier | Statut | Description |
+|---------|--------|-------------|
+| `models.py` | ✅ fait | Modèles SQLAlchemy — StockItem, RoomStock, CleaningNotification |
+| `database.py` | ✅ fait | Connexion PostgreSQL async + init_db() + get_db() |
+| `schemas.py` | ✅ fait | Schémas Pydantic (validation requêtes/réponses) |
+| `routers/stock.py` | ✅ fait | Endpoints stock |
+| `routers/menage.py` | ✅ fait | Endpoints ménage |
+| `services/stock.service.py` | 🔲 à faire | Logique métier stock |
+| `services/menage.service.py` | 🔲 à faire | Logique métier ménage |
+| `main.py` | ✅ fait | App FastAPI principale |
+
+#### Endpoints prévus
+| Méthode | URL | Description |
+|---------|-----|-------------|
+| GET | `/health` | Health check |
+| GET | `/stock` | Stock de toutes les chambres |
+| GET | `/stock/{chambre_id}` | Stock d'une chambre |
+| POST | `/stock/init/{chambre_id}` | Initialiser stock d'une chambre |
+| PUT | `/stock/{chambre_id}/decrement` | Décrémenter après réservation |
+| PUT | `/stock/{chambre_id}/restock` | Réapprovisionner après ménage |
+| GET | `/stock/alertes` | Chambres avec stock bas |
+| POST | `/menage/notification` | Femme de ménage signale chambre nettoyée |
+| GET | `/menage/notifications` | Liste toutes les notifications |
+| PUT | `/menage/notifications/{id}/traiter` | Marquer notification comme traitée |
 
 #### Variables d'environnement
 ```
@@ -237,7 +294,7 @@ PORT=8082
 - fastapi
 - uvicorn
 - aio-pika
-- sqlalchemy
+- sqlalchemy[asyncio]
 - asyncpg
 - pydantic
 - python-jose
@@ -247,14 +304,14 @@ PORT=8082
 ### Service 4 — Go (Comptabilité & Restaurant)
 - **Port** : 8083
 - **Base de données** : MySQL (`mysql1:3306/service4db`) — pas encore dans le docker-compose
-- **État** : Basique — uniquement `/test` endpoint, à compléter
+- **État** : 🔲 À implémenter
 
-#### Fonctionnalités à implémenter
+#### Ce que le service fait automatiquement
 - Recevoir et comptabiliser toutes les factures du jour
-- Générer tableau de bord journalier (chambres vendues vs articles consommés)
-- Gérer les commandes restaurant
-- Additionner facture restaurant à la facture chambre
-- Diffuser les menus sur le site web
+- Générer le tableau de bord journalier (chambres vendues vs articles consommés)
+- Gérer les commandes du restaurant
+- Additionner la facture restaurant à la facture chambre si le client mange au restaurant
+- Afficher les menus du restaurant sur le site web et Facebook
 
 #### Dépendances Go
 - github.com/gin-gonic/gin
@@ -284,7 +341,26 @@ PORT=8082
 | ROOM_CLEANED | Femme de ménage notifie | service1 remet la chambre disponible |
 | STOCK_UPDATED | Articles remplacés | service4 met à jour le tableau de bord |
 
-> **Note** : La communication RabbitMQ est définie mais pas encore implémentée dans les services. À faire.
+> **Note** : La communication RabbitMQ est définie mais pas encore implémentée. À faire après service3.
+
+---
+
+## CI/CD
+
+### Déploiement continu (CD)
+- **Fichier** : `.github/workflows/deploy.yml`
+- **Déclencheur** : push sur `main`
+- **Fonctionnement** : GitHub Actions se connecte en SSH au VPS, fait `git pull`, rebuild les containers et vérifie les health checks
+- **Secrets GitHub requis** :
+
+| Secret | Description |
+|--------|-------------|
+| `VPS_HOST` | IP du VPS |
+| `VPS_USER` | Utilisateur SSH |
+| `VPS_KEY` | Clé SSH privée |
+| `VPS_PORT` | Port SSH (22) |
+
+> **État** : Workflow prêt, en attente de l'achat du VPS.
 
 ---
 
@@ -376,16 +452,16 @@ docker-compose up --build
 docker-compose down
 
 # Rebuild un seul service
-docker-compose build service2
-docker-compose up -d service2
+docker-compose build service3
+docker-compose up -d service3
 
 # Voir les logs d'un service
-docker-compose logs -f service2
+docker-compose logs -f service3
 
 # Tester les health checks
 curl http://localhost:8080/service1/users/health
 curl http://localhost:8080/service2/health
-curl http://localhost:8080/service3/test
+curl http://localhost:8080/service3/health
 ```
 
 ---
@@ -398,10 +474,21 @@ curl -X POST http://localhost:8080/service1/users/register \
   -H "Content-Type: application/json" \
   -d '{"nom":"Rakoto","prenom":"Jean","email":"jean@hotel.mg","password":"1234","role":"CLIENT","pieceIdentite":"CIN-123456"}'
 
+# Créer une réceptionniste
+curl -X POST http://localhost:8080/service1/users/register \
+  -H "Content-Type: application/json" \
+  -d '{"nom":"Rasoa","prenom":"Marie","email":"marie@hotel.mg","password":"1234","role":"RECEPTIONNISTE"}'
+
 # Login
 curl -X POST http://localhost:8080/service1/users/login \
   -H "Content-Type: application/json" \
   -d '{"email":"jean@hotel.mg","password":"1234"}'
+
+# Voir tous les users
+curl http://localhost:8080/service1/users
+
+# Voir par rôle
+curl http://localhost:8080/service1/users/role/CLIENT
 
 # Créer une chambre
 curl -X POST http://localhost:8080/service2/rooms \
@@ -423,14 +510,29 @@ curl -X POST http://localhost:8080/service2/invoices/<reservationId>
 curl -X POST http://localhost:8080/service2/payments/<invoiceId> \
   -H "Content-Type: application/json" \
   -d '{"methode":"espece"}'
+
+# Stock d'une chambre (service3)
+curl http://localhost:8080/service3/stock/<chambre_id>
+
+# Notification ménage (service3)
+curl -X POST http://localhost:8080/service3/menage/notification \
+  -H "Content-Type: application/json" \
+  -d '{"chambre_id":"<id>","chambre_numero":"101","femme_menage_id":"<id>"}'
 ```
 
 ---
 
-## Ce qui reste à faire
+  ## Ce qui reste à faire
+
+### Service3 — En cours
+- [x] `models.py` — StockItem, RoomStock, CleaningNotification
+- [x] `database.py` — connexion PostgreSQL async
+- [x] `schemas.py` — schémas Pydantic
+- [x] `routers/` — endpoints stock et ménage
+- [x] `services/` — logique métier
+- [x] `main.py` — réécrire avec FastAPI
 
 ### Priorité haute
-- [ ] Implémenter les endpoints service3 (Python) — stock et ménage
 - [ ] Implémenter les endpoints service4 (Go) — comptabilité et restaurant
 - [ ] Connecter service4 à MySQL dans le docker-compose
 - [ ] Implémenter la communication RabbitMQ entre les services
@@ -452,87 +554,11 @@ curl -X POST http://localhost:8080/service2/payments/<invoiceId> \
 
 ## Notes importantes
 
-- **Nommage** : `/service1` dans le dossier = Java (Auth/User), `/service2` = Node.js (Réservation). Les noms de dossiers ne correspondent pas aux technologies — se référer à ce document.
+- **Nommage** : `/service1` = Java (Auth/User), `/service2` = Node.js (Réservation), `/service3` = Python (Stock/Ménage), `/service4` = Go (Comptabilité).
 - **Pas de .env** : Tout est géré via les variables d'environnement dans `docker-compose.yml`.
 - **MongoDB** : Pas de migration nécessaire, les collections se créent automatiquement.
-- **PostgreSQL** : Spring Boot gère la création des tables via `spring.jpa.hibernate.ddl-auto=update`.
+- **PostgreSQL service1** : Spring Boot gère la création des tables via `spring.jpa.hibernate.ddl-auto=update`.
+- **PostgreSQL service3** : Les tables sont créées au démarrage via `init_db()` dans `database.py`.
 - **Security** : Spring Security est configuré pour tout autoriser (`permitAll`) pour l'instant — à sécuriser avant la production.
-Service 2 — Node.js (Réservation & Paiement)
-Ce que l'app fait automatiquement :
-
-Afficher les chambres disponibles (Standard, Suite Senior, Suite Prestige) avec leurs tarifs
-Permettre au client de réserver une chambre via le site web
-Générer automatiquement la facture après réservation
-Enregistrer le paiement encaissé
-Notifier Service 3 qu'une chambre est vendue (pour préparer les articles)
-Notifier Service 4 qu'une facture est créée (pour la comptabilité)
-
-
-Service 1  — Java (Auth + Réceptionniste)
-Ce que l'app fait automatiquement :
-
-Gérer la connexion du client et du personnel (réceptionniste, femme de ménage, comptable)
-Enregistrer la pièce d'identité du client lors du check-in
-Recevoir la notification que la chambre est propre et la remettre en disponible
-Bloquer la vente d'une chambre non nettoyée
-
-
-Service 3 — Python (Stock & Ménage)
-Ce que l'app fait automatiquement :
-
-Gérer le stock des articles par chambre (gel douche, pantoufle, brosse à dent, papier hygiénique)
-Décrémenter le stock automatiquement à chaque réservation
-Recevoir la notification de la femme de ménage quand une chambre est nettoyée
-Notifier la réceptionniste qu'une chambre est propre et disponible
-Alerter quand le stock d'articles est bas
-
-
-Service 4 — Go (Comptabilité & Restaurant)
-Ce que l'app fait automatiquement :
-
-Recevoir et comptabiliser toutes les factures du jour
-Générer le tableau de bord journalier (chambres vendues vs articles consommés)
-Gérer les commandes du restaurant
-Additionner la facture restaurant à la facture chambre si le client mange au restaurant
-Afficher les menus du restaurant sur le site web et Facebook
-    
-
-
-
-
-docker-compose down
-docker-compose up --build
-
-# Créer un client
-curl -X POST http://localhost:8080/service1/users/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nom": "Rakoto",
-    "prenom": "Jean",
-    "email": "jean@hotel.mg",
-    "password": "1234",
-    "role": "CLIENT",
-    "pieceIdentite": "CIN-123456"
-  }'
-
-# Créer une réceptionniste
-curl -X POST http://localhost:8080/service1/users/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nom": "Rasoa",
-    "prenom": "Marie",
-    "email": "marie@hotel.mg",
-    "password": "1234",
-    "role": "RECEPTIONNISTE"
-  }'
-
-# Login
-curl -X POST http://localhost:8080/service1/users/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "jean@hotel.mg", "password": "1234"}'
-
-# Voir tous les users
-curl http://localhost:8080/service1/users
-
-# Voir par rôle
-curl http://localhost:8080/service1/users/role/CLIENT
+- **chambre_id dans service3** : C'est un String (format ObjectId MongoDB), pas un Integer. Service3 ne duplique pas les données de service2.
+- **GitHub** : Repo poussé sur `main`. Workflow CD prêt, attend le VPS.

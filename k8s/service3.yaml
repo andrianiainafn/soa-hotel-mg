@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service3
+  namespace: soa-hotel
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: service3
+  template:
+    metadata:
+      labels:
+        app: service3
+    spec:
+      containers:
+      - name: service3
+        image: europe-west1-docker.pkg.dev/soa-hotel-project/soa-hotel/service3:latest
+        ports:
+        - containerPort: 8082
+        env:
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: soa-secrets
+              key: rabbitmq-url
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: soa-secrets
+              key: postgres2-url
+        - name: PORT
+          value: "8082"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service3
+  namespace: soa-hotel
+spec:
+  selector:
+    app: service3
+  ports:
+  - port: 8082
